@@ -25,7 +25,7 @@ function startCamera() {
             video.srcObject = stream;
             video.play();
             cap = new cv.VideoCapture(video);
-            setTimeout(processFrame, 50, recognizeShapes);
+            setTimeout(processFrame, 50, segmentBgFg);
         })
         .catch(function (err) {
             console.error("An error occurred: " + err);
@@ -34,8 +34,11 @@ function startCamera() {
 
 function processFrame(fn) {
     let input = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+    cap.read(input);
     let output = new cv.Mat();
+
     fn(input, output);
+
     input.delete();
     output.delete();
     setTimeout(processFrame, 100, fn);
@@ -47,13 +50,41 @@ function segmentBgFg(input, output) {
     cv.cvtColor(input, gray, cv.COLOR_RGBA2GRAY);
 
     // Apply adaptive thresholding to segment the image
-    cv.adaptiveThreshold(gray, output, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+    // cv.adaptiveThreshold(gray, output, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 25, 10);
+    const thresh = new cv.Mat();
+    cv.threshold(gray, thresh, 128, 255, cv.THRESH_BINARY_INV);
+
+    // Find the contours
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    // Draw the contours on the original image
+    const color = new cv.Scalar(255, 255, 255); // Red color for contours
+    const thickness = 2; // Thickness of contour lines
+    const dst = cv.Mat.zeros(input.rows, input.cols, cv.CV_8UC3); // Output image
+    for (let i = 0; i < contours.size(); i++) {
+        let contour = contours.get(i);
+        let epsilon = 0.1 * cv.arcLength(contour, true);
+        let approx = new cv.Mat();
+        cv.approxPolyDP(contour, approx, epsilon, true);
+        let vertices = approx.rows;
+        if (vertices < 3) continue;
+
+        console.log('area:', cv.contourArea(contour), 'vertices:', vertices, 'is convex:', cv.isContourConvex(contour));
+        // if (!cv.isContourConvex(contour)) continue;
+        cv.drawContours(dst, contours, i, color, thickness, cv.LINE_8, hierarchy, 0);
+    }
 
     // Display the thresholded image
-    cv.imshow('canvas', output);
+    cv.imshow('canvas', dst);
 
     // Release the memory
     gray.delete();
+    thresh.delete();
+    contours.delete();
+    hierarchy.delete();
+    dst.delete();
 }
 
 function recognizeShapes(input, output) {
@@ -62,7 +93,6 @@ function recognizeShapes(input, output) {
     let contours = window.contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
 
-    cap.read(src);
     const scaleFactor = 0.5;
     const dsize = new cv.Size(src.cols * scaleFactor, src.rows * scaleFactor);
     cv.resize(src, src, dsize, 0, 0, cv.INTER_AREA);
