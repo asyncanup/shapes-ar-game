@@ -25,15 +25,39 @@ function startCamera() {
             video.srcObject = stream;
             video.play();
             cap = new cv.VideoCapture(video);
-            setTimeout(processFrame, 50);
+            setTimeout(processFrame, 50, recognizeShapes);
         })
         .catch(function (err) {
             console.error("An error occurred: " + err);
         });
 }
 
-function processFrame() {
-    let src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+function processFrame(fn) {
+    let input = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+    let output = new cv.Mat();
+    fn(input, output);
+    input.delete();
+    output.delete();
+    setTimeout(processFrame, 100, fn);
+}
+
+function segmentBgFg(input, output) {
+    // Convert to grayscale
+    const gray = new cv.Mat();
+    cv.cvtColor(input, gray, cv.COLOR_RGBA2GRAY);
+
+    // Apply adaptive thresholding to segment the image
+    cv.adaptiveThreshold(gray, output, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+
+    // Display the thresholded image
+    cv.imshow('canvas', output);
+
+    // Release the memory
+    gray.delete();
+}
+
+function recognizeShapes(input, output) {
+    let src = input;
     let gray = new cv.Mat();
     let contours = window.contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
@@ -97,12 +121,9 @@ function processFrame() {
     cv.imshow('canvas', src);
     if (window.stopNow) debugger;
 
-    src.delete();
     gray.delete();
     contours.delete();
     hierarchy.delete();
-
-    setTimeout(processFrame, 100);
 }
 
 function contourLengthInInches(contour) {
@@ -115,46 +136,46 @@ function contourLengthInInches(contour) {
 }
 
 function colorVariance(src, contour) {
-  let colorSum = [0, 0, 0];
-  let colorCount = 0;
+    let colorSum = [0, 0, 0];
+    let colorCount = 0;
 
-  let points = [];
-  for (let i = 0; i < contour.rows; ++i) {
-    points.push({ x: contour.data32S[i * 2], y: contour.data32S[i * 2 + 1] });
-  }
+    let points = [];
+    for (let i = 0; i < contour.rows; ++i) {
+        points.push({x: contour.data32S[i * 2], y: contour.data32S[i * 2 + 1]});
+    }
 
-  for (let y = 0; y < src.rows; ++y) {
-    for (let x = 0; x < src.cols; ++x) {
-      if (cv.pointPolygonTest(contour, new cv.Point(x, y), false) >= 0) {
-        const idx = (y * src.cols + x) * src.channels();
+    for (let y = 0; y < src.rows; ++y) {
+        for (let x = 0; x < src.cols; ++x) {
+            if (cv.pointPolygonTest(contour, new cv.Point(x, y), false) >= 0) {
+                const idx = (y * src.cols + x) * src.channels();
+                const color = [src.data[idx], src.data[idx + 1], src.data[idx + 2]];
+
+                colorSum[0] += color[0];
+                colorSum[1] += color[1];
+                colorSum[2] += color[2];
+                colorCount++;
+            }
+        }
+    }
+
+    let meanColor = [
+        colorSum[0] / colorCount,
+        colorSum[1] / colorCount,
+        colorSum[2] / colorCount,
+    ];
+
+    let colorVarianceSum = 0;
+    points.forEach((point) => {
+        const idx = (point.y * src.cols + point.x) * src.channels();
         const color = [src.data[idx], src.data[idx + 1], src.data[idx + 2]];
 
-        colorSum[0] += color[0];
-        colorSum[1] += color[1];
-        colorSum[2] += color[2];
-        colorCount++;
-      }
-    }
-  }
+        const diffR = color[0] - meanColor[0];
+        const diffG = color[1] - meanColor[1];
+        const diffB = color[2] - meanColor[2];
 
-  let meanColor = [
-    colorSum[0] / colorCount,
-    colorSum[1] / colorCount,
-    colorSum[2] / colorCount,
-  ];
+        colorVarianceSum += diffR ** 2 + diffG ** 2 + diffB ** 2;
+    });
 
-  let colorVarianceSum = 0;
-  points.forEach((point) => {
-    const idx = (point.y * src.cols + point.x) * src.channels();
-    const color = [src.data[idx], src.data[idx + 1], src.data[idx + 2]];
-
-    const diffR = color[0] - meanColor[0];
-    const diffG = color[1] - meanColor[1];
-    const diffB = color[2] - meanColor[2];
-
-    colorVarianceSum += diffR ** 2 + diffG ** 2 + diffB ** 2;
-  });
-
-  let variance = colorVarianceSum / colorCount;
-  return variance;
+    let variance = colorVarianceSum / colorCount;
+    return variance;
 }
