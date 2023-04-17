@@ -43,14 +43,20 @@ function processFrame() {
     const dsize = new cv.Size(src.cols * scaleFactor, src.rows * scaleFactor);
     cv.resize(src, src, dsize, 0, 0, cv.INTER_AREA);
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
     cv.Canny(gray, gray, 50, 100, 3, false);
     cv.findContours(gray, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
 
     for (let i = 0; i < contours.size(); ++i) {
         let contour = contours.get(i);
-        if (contourLengthInInches(contour) < MIN_LINE_LENGTH_INCHES) {
-            continue;
-        }
+        // if (!cv.isContourConvex(contour)) continue;
+        let area = cv.contourArea(contour);
+        if (area < 100) continue;
+        console.log('area ' + area);
+        if (area < 800) continue;
+        // if (contourLengthInInches(contour) < MIN_LINE_LENGTH_INCHES) {
+        //     continue;
+        // }
 
         let epsilon = 0.02 * cv.arcLength(contour, true);
         let approx = new cv.Mat();
@@ -59,12 +65,12 @@ function processFrame() {
         let vertices = approx.rows;
         let color = new cv.Scalar(0, 0, 255);
 
-        // Skip the contour if the color variance is too high
-        const MAX_COLOR_VARIANCE = 100; // Adjust this value based on your requirements
-        if (colorVariance(src, contour) > MAX_COLOR_VARIANCE) {
-            approx.delete();
-            continue;
-        }
+        // // Skip the contour if the color variance is too high
+        // const MAX_COLOR_VARIANCE = 100; // Adjust this value based on your requirements
+        // if (colorVariance(src, contour) > MAX_COLOR_VARIANCE) {
+        //     approx.delete();
+        //     continue;
+        // }
 
         if (vertices === 3) {
             console.log("Triangle detected");
