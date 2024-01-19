@@ -25,7 +25,7 @@ function startCamera() {
             video.srcObject = stream;
             video.play();
             cap = new cv.VideoCapture(video);
-            setTimeout(processFrame, 50, segmentBgFg);
+            setTimeout(processFrame, 50, recognizeShapes);
         })
         .catch(function (err) {
             console.error("An error occurred: " + err);
